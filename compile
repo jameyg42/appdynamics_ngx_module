@@ -1,0 +1,43 @@
+#!/bin/bash
+PWD=$(pwd -P)
+BASE="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
+SRC=${BASE}/vendor/nginx
+BUILD=${BASE}/build/nginx
+echo "building into ${BUILD}"
+
+die() {
+    echo $1
+    cd ${BASE}/vendor/nginx
+    if [ -f Makefile ]; then 
+        make clean
+    fi
+    cd ${PWD}
+    exit
+}
+
+[ "$1" == "dynamic" ]; MODULE="--add-dynamic-module=${BASE}" || MODULE=" --add-module=${BASE}"
+[ "$1" == "skip" ];    MODULE=""
+
+cd ${SRC}
+./auto/configure         \
+ --with-cc-opt="-g -O0"  \
+ --with-debug            \
+ --with-compat           \
+ --builddir=${BUILD} \
+ --prefix=${BUILD}       \
+ --with-http_ssl_module  \
+ ${MODULE}               \
+             || die "configuration failed"
+make         || die "nginx compilation failed"
+make install || die "nginx installation failed"
+# don't "make clean" here because we need to preserve the headers created by 'configure' to 
+# keep intellisense happy
+rm -f Makefile
+
+# we can't just set --conf-path since 'make install' will copy additional files
+# to the directory containing nginx.conf, so install it into the "prefix" then
+# replace the nginx.conf there w/ a link to the ${BASE} one
+cd ${BUILD}
+rm -f ./conf/nginx.conf
+ln -s ${BASE}/nginx.conf ./conf/nginx.conf
+cd ${PWD}

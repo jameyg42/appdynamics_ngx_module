@@ -1,0 +1,4 @@
+build/
+.vscode/
+vendor/appdynamics-cpp-sdk/
+nginx.conf
