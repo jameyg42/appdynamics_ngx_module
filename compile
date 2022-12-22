@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash -x
 PWD=$(pwd -P)
 BASE="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"
 SRC=${BASE}/vendor/nginx
@@ -15,8 +15,8 @@ die() {
     exit
 }
 
-[ "$1" == "dynamic" ]; MODULE="--add-dynamic-module=${BASE}" || MODULE=" --add-module=${BASE}"
-[ "$1" == "skip" ];    MODULE=""
+[ "$1" == "dynamic" ] && MODULE="--add-dynamic-module=${BASE}" || MODULE=" --add-module=${BASE}"
+[ "$1" == "skip"    ] && MODULE=""
 
 cd ${SRC}
 ./auto/configure         \

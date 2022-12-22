@@ -183,7 +183,7 @@ appdynamics_create_main_config(ngx_conf_t *cf) {
 }
 static char *
 appdynamics_init_main_config(ngx_conf_t *cf, void *conf) {
-  appdynamics_main_conf_t *main = conf;
+  // appdynamics_main_conf_t *main = conf;
   // TODO validate configuration
 
   return NGX_CONF_OK;
@@ -246,13 +246,13 @@ appdynamics_wrap_location_handler(ngx_http_request_t *r) {
     ngx_log_error(NGX_LOG_ERR, r->connection->log, 0, "MOD_APPD - created exit for %s", exit_name);
 
     // FIXME need to ACTUALLY figure out how to track backends that are already registered
-    actx->exit = appd_exitcall_begin(actx->bt, exit_name);
+    actx->exit = appd_exitcall_begin(actx->bt, (const char*)exit_name);
     if (actx->exit == NULL) {
       ngx_log_error(NGX_LOG_NOTICE, r->connection->log, 0, "MOD_APPD - registering new backend for  %s", exit_name);
-      appd_backend_declare(APPD_BACKEND_HTTP, exit_name);
-      appd_backend_set_identifying_property(exit_name, "HOST", exit_name);
-      appd_backend_add(exit_name);
-      actx->exit = appd_exitcall_begin(actx->bt, exit_name);
+      appd_backend_declare(APPD_BACKEND_HTTP, (const char*)exit_name);
+      appd_backend_set_identifying_property((const char*)exit_name, "HOST", (const char*)exit_name);
+      appd_backend_add((const char*)exit_name);
+      actx->exit = appd_exitcall_begin(actx->bt, (const char*)exit_name);
     }
 
     
@@ -274,14 +274,14 @@ appdynamics_init_worker(ngx_cycle_t *cycle) {
     ngx_log_error(NGX_LOG_NOTICE, cycle->log, 0, "agent_name           : %V->%V", &main->agent_app_name, &main->agent_tier_name);
 
     struct appd_config* cfg = appd_config_init();
-    appd_config_set_controller_host(cfg, main->controller_hostname.data);
+    appd_config_set_controller_host(cfg, (const char*)main->controller_hostname.data);
     appd_config_set_controller_port(cfg, main->controller_port);
-    appd_config_set_controller_account(cfg, main->controller_account.data);
-    appd_config_set_controller_access_key(cfg, main->controller_access_key.data);
+    appd_config_set_controller_account(cfg, (const char*)main->controller_account.data);
+    appd_config_set_controller_access_key(cfg, (const char*)main->controller_access_key.data);
     appd_config_set_controller_use_ssl(cfg, main->controller_use_ssl);
-    appd_config_set_app_name(cfg, main->agent_app_name.data);
-    appd_config_set_tier_name(cfg, main->agent_tier_name.data);
-    appd_config_set_node_name(cfg, main->agent_node_name.data);
+    appd_config_set_app_name(cfg, (const char*)main->agent_app_name.data);
+    appd_config_set_tier_name(cfg, (const char*)main->agent_tier_name.data);
+    appd_config_set_node_name(cfg, (const char*)main->agent_node_name.data);
     appd_config_set_controller_certificate_dir(cfg, "/etc/ssl/certs");
     int rc = appd_sdk_init(cfg);
     if (rc) {
