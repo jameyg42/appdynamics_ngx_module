@@ -228,8 +228,9 @@ appd_ngx_transaction_begin(ngx_http_request_t *r, appd_ngx_tracing_ctx *tc) {
 
 static void
 appd_ngx_backend_begin(ngx_http_request_t *r, appd_ngx_loc_conf_t *alcf, appd_ngx_tracing_ctx *tc) {
-  char *backend;
-  const char *th;
+  ngx_table_elt_t *h;
+  char            *backend;
+  const char      *th;
   
   backend = (char *)alcf->backend_name.data;
   ngx_log_error(NGX_LOG_NOTICE, r->connection->log, 0, "MOD_APPD - beginning exitcall for backend %s", backend);
@@ -240,7 +241,15 @@ appd_ngx_backend_begin(ngx_http_request_t *r, appd_ngx_loc_conf_t *alcf, appd_ng
   // to the inbound request headers and assume proxy_pass_request_headers is on
   th = appd_exitcall_get_correlation_header(tc->exit);
   ngx_log_error(NGX_LOG_NOTICE, r->connection->log, 0, "MOD_APPD - correlating exitcall with header %s", th);
- // TODO add header to upstream request...somehow....
+  h = ngx_list_push(&r->headers_in.headers);
+  if (h != NULL) {
+    h->key.len = strlen(APPD_CORRELATION_HEADER_NAME);
+    h->key.data = APPD_CORRELATION_HEADER_NAME;
+    h->lowcase_key = tolower(APPD_CORRELATION_HEADER_NAME);
+    h->value.len = strlen(th);
+    h->value.data = th;
+    h->hash = ngx_hash_key(h->key.data, h->key.len);
+  }
 }
 
 
