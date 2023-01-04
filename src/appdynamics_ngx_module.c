@@ -1,9 +1,6 @@
 #include "./appdynamics_ngx_module.h"
 
-
-/* ------------ initialization stuff -------------*/
-
-
+/***** CONFIGURATION *****/
 static void *
 appd_ngx_create_main_config(ngx_conf_t *cf) {
   appd_ngx_main_conf_t *amcf;
@@ -27,7 +24,6 @@ appd_ngx_init_main_config(ngx_conf_t *cf, void *conf) {
   appd_ngx_main_conf_t *amcf = conf;
   if (amcf->enabled) {
     // TODO validate configuration
-
   }
 
   return NGX_CONF_OK;
@@ -62,13 +58,40 @@ appd_ngx_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child) {
 
   return NGX_CONF_OK;
 }
+static ngx_int_t 
+appd_ngx_postconfiguration(ngx_conf_t *cf) {
+  ngx_http_handler_pt        *h;
+  ngx_http_core_main_conf_t  *cmcf;
+  appd_ngx_main_conf_t       *amcf;
+
+  amcf = ngx_http_conf_get_module_main_conf(cf, appdynamics_ngx_module);
+
+  if (amcf->enabled) {
+    cf->log->action = "registering appd phase handlers";
+    cmcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_core_module);
+    h = ngx_array_push(&cmcf->phases[NGX_HTTP_REWRITE_PHASE].handlers);
+    if (h == NULL) {
+      return NGX_ERROR;
+    }
+    *h = appd_ngx_rewrite_handler;
+
+    h = ngx_array_push(&cmcf->phases[NGX_HTTP_PRECONTENT_PHASE].handlers);
+    if (h == NULL) {
+      return NGX_ERROR;
+    }
+    *h = appd_ngx_precontent_handler;
+  }
+  
+  return NGX_OK;
+}
 
 
+/***** INITIALIZATION *****/
 static ngx_int_t 
 appd_ngx_init_worker(ngx_cycle_t *cycle) {
   appd_ngx_main_conf_t *amcf;
   amcf = ngx_http_cycle_get_module_main_conf(cycle, appdynamics_ngx_module);
-  if (amcf && amcf->enabled) {
+  if (amcf->enabled) {
     if (appd_ngx_sdk_init(cycle, amcf) != NGX_OK) {
       return NGX_ERROR;
     }
@@ -82,6 +105,7 @@ appd_ngx_init_worker(ngx_cycle_t *cycle) {
   }
   return NGX_OK;
 }
+
 static ngx_int_t
 appd_ngx_sdk_init(ngx_cycle_t *cycle, appd_ngx_main_conf_t *amcf) {
   cycle->log->action = "initializing AppDynamics SDK";
@@ -128,44 +152,27 @@ appd_ngx_backends_init(ngx_cycle_t *cycle, appd_ngx_main_conf_t *amcf) {
   return NGX_OK;
 }
 
-static ngx_int_t 
-appd_ngx_register_handlers(ngx_conf_t *cf) {
-  ngx_http_handler_pt        *h;
-  ngx_http_core_main_conf_t  *cmcf;
-  appd_ngx_main_conf_t       *amcf;
-
-  amcf = ngx_http_conf_get_module_main_conf(cf, appdynamics_ngx_module);
-
-  if (amcf->enabled) {
-    ngx_log_error(NGX_LOG_NOTICE, cf->log, 0, "MOD_APPD - appdynamics is enabled - configuring phase handlers");
-    cmcf = ngx_http_conf_get_module_main_conf(cf, ngx_http_core_module);
-    h = ngx_array_push(&cmcf->phases[NGX_HTTP_REWRITE_PHASE].handlers);
-    if (h == NULL) {
-      return NGX_ERROR;
-    }
-    *h = appd_ngx_rewrite_handler;
-
-    h = ngx_array_push(&cmcf->phases[NGX_HTTP_PRECONTENT_PHASE].handlers);
-    if (h == NULL) {
-      return NGX_ERROR;
-    }
-    *h = appd_ngx_precontent_handler;
-  }
-  
-  return NGX_OK;
+static void 
+appd_ngx_exit_worker(ngx_cycle_t *cycle) {
+  appd_sdk_term();
 }
 
 
-/* --------------- functional stuff ------------------ */
+/***** REQUEST INSTRUMENTATION *****/
 
 static ngx_int_t 
 appd_ngx_rewrite_handler(ngx_http_request_t *r) {
   appd_ngx_tracing_ctx *tc;
   appd_ngx_loc_conf_t *alcf;
 
+  if (r->parent != NULL) {
+    // subrequest - ignore
+    return NGX_DECLINED;
+  }
+
   if (appd_ngx_get_module_ctx(r) != NULL) {
-    // if the request already has a context associated with it
-    // we're already instrumenting it
+    // unknown reason why request would already have a context associated with it
+    ngx_log_error(NGX_LOG_WARN, r->connection->log, 0, "MOD_APPD - unexpectedly found an existing module context bound to request in REWRITE phase");
     return NGX_DECLINED;
   }
 
@@ -186,18 +193,20 @@ static ngx_int_t
 appd_ngx_precontent_handler(ngx_http_request_t *r) {
   appd_ngx_tracing_ctx *tc;
   appd_ngx_loc_conf_t *alcf;
-  // TODO we're waiting until precontent to start any associated exit
-  // to try to make sure any subrequest isn't included in the exit measurement.
-  // This approach might be flawed, however, if precontent gets called for the
-  // subrequest (don't fully understand subrequest lifecycle)
+
+  if (r->parent != NULL) {
+    // subrequest
+    return NGX_DECLINED;
+  }
+
+  tc = appd_ngx_get_module_ctx(r);
+  if (tc == NULL) {
+    ngx_log_error(NGX_LOG_WARN, r->connection->log, 0, "MOD_APPD - module context unexpectedly not found in PRECONTENT phase");
+    return NGX_DECLINED;
+  }
 
   alcf = ngx_http_get_module_loc_conf(r, appdynamics_ngx_module);
   if (alcf->backend_name.len > 0) {
-    tc = appd_ngx_get_module_ctx(r);
-    if (tc == NULL) {
-      ngx_log_error(NGX_LOG_WARN, r->connection->log, 0, "MOD_APPD - module context unexpectedly not found");
-      return NGX_DECLINED;
-    }
     appd_ngx_backend_begin(r, alcf, tc);
   }
 
@@ -205,18 +214,47 @@ appd_ngx_precontent_handler(ngx_http_request_t *r) {
 }
 
 
+
+static void
+appd_ngx_transaction_begin(ngx_http_request_t *r, appd_ngx_tracing_ctx *tc) {
+  char * url;
+
+  url = appd_ngx_to_cstr(r->uri, r->pool);
+  ngx_log_error(NGX_LOG_NOTICE, r->connection->log, 0, "MOD_APPD - beginning BT for URL %s", url);
+
+  tc->bt = appd_bt_begin(url, NULL);
+  appd_bt_set_url(tc->bt, url);
+}
+
+static void
+appd_ngx_backend_begin(ngx_http_request_t *r, appd_ngx_loc_conf_t *alcf, appd_ngx_tracing_ctx *tc) {
+  char *backend;
+  const char *th;
+  
+  backend = (char *)alcf->backend_name.data;
+  ngx_log_error(NGX_LOG_NOTICE, r->connection->log, 0, "MOD_APPD - beginning exitcall for backend %s", backend);
+  tc->exit = appd_exitcall_begin(tc->bt, backend);
+
+  // this is a bit of a hack - opentelemetry handles correlation header injection by phonying a
+  // set_proxy_header in the location config and uses a variable.  For now, we'll just append it
+  // to the inbound request headers and assume proxy_pass_request_headers is on
+  th = appd_exitcall_get_correlation_header(tc->exit);
+  ngx_log_error(NGX_LOG_NOTICE, r->connection->log, 0, "MOD_APPD - correlating exitcall with header %s", th);
+ // TODO add header to upstream request...somehow....
+}
+
+
+/**** MODULE CONTEXT *****
+ * We can't use Nginx module context mechanics because Nginx will ZERO
+ * out module context on internal redirects with no opportunity to cleanup
+ * the context (BT/Exit handles) before that happens.  Instead, we rely on
+ * a somewhat filthy hack that allows arbitrary data to be stored against
+ * the request in a memory pool cleanup handler (this is what Nginx realip
+ * module does for similar reasons).
+ */
 static ngx_int_t
 appd_ngx_set_module_ctx(ngx_http_request_t *r, appd_ngx_tracing_ctx *ctx) {
   ngx_pool_cleanup_t  *cln;
-  // we can't actually store appd context in the module context since the
-  // module context is ZEROd out on internal redirect.  The only (current)
-  // reliable way to end/cleanup the AppD BT is with a pool cleanup handler.
-  // To a degree, this is a filthy hack since it really only relies on the fact
-  // that pool cleanup handlers a) don't get modified by internal request processing
-  // and b) they contain a "data" pointer (i.e. it's just a place to stash an
-  // arbitrary pointer bound to the request lifecycle).
-  // NOTE that unlike the normal set_ctx macro that can't fail, this "replacement"
-  // op can fail
   cln = ngx_pool_cleanup_add(r->pool, 0);
   if (cln == NULL) { 
     return NGX_ERROR;
@@ -233,8 +271,6 @@ appd_ngx_get_module_ctx(ngx_http_request_t *r) {
   ngx_pool_cleanup_t    *cln;
   appd_ngx_tracing_ctx  *ctx = NULL;
 
-  // since context is stored in a cleanup handler, we gotta work a
-  // bit to find it...
   for (cln = r->pool->cleanup; cln; cln = cln->next) {
     if (cln->handler == appd_ngx_cleanup_module_ctx) {
       ctx = cln->data;
@@ -245,8 +281,14 @@ appd_ngx_get_module_ctx(ngx_http_request_t *r) {
 }
 static void
 appd_ngx_cleanup_module_ctx(void *data) {
-  // TODO i think we actually still want to call **_end() in the
-  // LOG phase handler and just leave this empty
+  // TODO ideally we'd still be ending these in the LOG phase handler
+  // of the "main" request (no subrequests).  But it's not currently clear
+  // if the LOG phase will ALWAYS be called for the main request (even
+  // if the main requests gets swapped out by an internal redirect).
+  // We can probably attempt cleanup in LOG phase, and use this simply as a 
+  // just-in-case backup
+  // The biggest downside of doing it here is that we don't have the
+  // request status
   appd_ngx_tracing_ctx *tc = data;
   if (tc->bt != NULL) {
     if (tc->exit != NULL) {
@@ -257,32 +299,7 @@ appd_ngx_cleanup_module_ctx(void *data) {
 }
 
 
-static void
-appd_ngx_transaction_begin(ngx_http_request_t *r, appd_ngx_tracing_ctx *tc) {
-  ngx_log_error(NGX_LOG_NOTICE, r->connection->log, 0, "MOD_APPD - beginning appdynamics transaction");
-
-  tc->bt = appd_bt_begin("request", NULL);
-  appd_bt_set_url(tc->bt, appd_ngx_to_cstr(r->uri, r->pool));
-}
-
-static void
-appd_ngx_backend_begin(ngx_http_request_t *r, appd_ngx_loc_conf_t *alcf, appd_ngx_tracing_ctx *tc) {
-  const char *backend;
-  const char *th;
-  
-  backend = (char *)alcf->backend_name.data;
-  tc->exit = appd_exitcall_begin(tc->bt, backend);
-
-  // this is a bit of a hack - opentelemetry handles correlation header injection by phonying a
-  // set_proxy_header in the location config and uses a variable.  For now, we'll just append it
-  // to the inbound request headers and assume proxy_pass_request_headers is on
-  th = appd_exitcall_get_correlation_header(tc->exit);
-  ngx_log_error(NGX_LOG_NOTICE, r->connection->log, 0, "MOD_APPD - correlating with header %s", th);
- // TODO add header to upstream request...somehow....
-}
-
-
-
+/***** HELPERS *****/
 static char *
 appd_ngx_to_cstr(ngx_str_t source, ngx_pool_t *pool) {
   char* c = ngx_pcalloc(pool, source.len + 1);
