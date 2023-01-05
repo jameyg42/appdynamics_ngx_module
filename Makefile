@@ -45,5 +45,6 @@ test:
 		curl http://localhost:8888/; \
 		curl http://localhost:8888/proxy-remote/; \
 		curl http://localhost:8888/proxy-remote-upstream/; \
+		curl http://localhost:8888/login; \
 		sleep 2; \
 	done

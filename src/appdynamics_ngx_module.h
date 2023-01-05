@@ -169,6 +169,10 @@ static void appd_ngx_transaction_begin(ngx_http_request_t *r, appd_ngx_tracing_c
 static void appd_ngx_backend_begin(ngx_http_request_t *r, appd_ngx_loc_conf_t *alcf, appd_ngx_tracing_ctx *tc);
 //static void appd_ngx_backend_end(ngx_http_request_t *r, appd_ngx_tracing_ctx *tc);
 
+static char * appd_ngx_generate_transaction_name(ngx_http_request_t *r);
+static ngx_table_elt_t * appd_ngx_find_header(ngx_http_request_t *r, ngx_str_t *name);
+static void appd_ngx_insert_header(ngx_http_request_t *r, ngx_str_t *name, ngx_str_t *value);
+static void appd_ngx_upsert_header(ngx_http_request_t *r, ngx_str_t *name, ngx_str_t *value);
 
 static appd_ngx_tracing_ctx * appd_ngx_get_module_ctx(ngx_http_request_t *r);
 static ngx_int_t              appd_ngx_set_module_ctx(ngx_http_request_t *r, appd_ngx_tracing_ctx *ctx);
@@ -176,6 +180,9 @@ static void                   appd_ngx_cleanup_module_ctx(void *data);
 
 
 static char * appd_ngx_to_cstr(ngx_str_t source, ngx_pool_t *pool);
+static ngx_str_t * appd_ngx_cstr_to_ngx(char * source, ngx_pool_t *pool);
+
+static ngx_str_t APPD_NGX_SINGULARITY_HEADER = ngx_string(APPD_CORRELATION_HEADER_NAME);
 
 #endif
 

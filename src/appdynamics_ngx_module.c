@@ -216,20 +216,28 @@ appd_ngx_precontent_handler(ngx_http_request_t *r) {
 
 static void
 appd_ngx_transaction_begin(ngx_http_request_t *r, appd_ngx_tracing_ctx *tc) {
-  char * url;
+  ngx_table_elt_t *correlation_header_e;
+  char *correlation_header = NULL;
+  char *bt_name;
+  char *url;
+
+  bt_name = appd_ngx_generate_transaction_name(r);
+  correlation_header_e = appd_ngx_find_header(r, &APPD_NGX_SINGULARITY_HEADER);
+  if (correlation_header_e != NULL) {
+    correlation_header = appd_ngx_to_cstr(correlation_header_e->value, r->pool);
+  }
+  ngx_log_error(NGX_LOG_NOTICE, r->connection->log, 0, "MOD_APPD - beginning BT for URL %s", bt_name);
+
+  tc->bt = appd_bt_begin(bt_name, correlation_header);
 
   url = appd_ngx_to_cstr(r->uri, r->pool);
-  ngx_log_error(NGX_LOG_NOTICE, r->connection->log, 0, "MOD_APPD - beginning BT for URL %s", url);
-
-  tc->bt = appd_bt_begin(url, NULL);
   appd_bt_set_url(tc->bt, url);
 }
 
 static void
 appd_ngx_backend_begin(ngx_http_request_t *r, appd_ngx_loc_conf_t *alcf, appd_ngx_tracing_ctx *tc) {
-  ngx_table_elt_t *h;
-  char            *backend;
-  const char      *th;
+  char       *backend;
+  const char *th;
   
   backend = (char *)alcf->backend_name.data;
   ngx_log_error(NGX_LOG_NOTICE, r->connection->log, 0, "MOD_APPD - beginning exitcall for backend %s", backend);
@@ -242,16 +250,75 @@ appd_ngx_backend_begin(ngx_http_request_t *r, appd_ngx_loc_conf_t *alcf, appd_ng
   // one instead of pushing a new one onto the headers list
   th = appd_exitcall_get_correlation_header(tc->exit);
   ngx_log_error(NGX_LOG_NOTICE, r->connection->log, 0, "MOD_APPD - correlating exitcall with header %s", th);
-  h = ngx_list_push(&r->headers_in.headers);
-  if (h != NULL) {
-    ngx_str_set(&h->key, APPD_CORRELATION_HEADER_NAME);
-    ngx_str_set(&h->value, (const u_char *)th);
-    h->hash = ngx_hash_key(h->key.data, h->key.len);
+  appd_ngx_upsert_header(r, &APPD_NGX_SINGULARITY_HEADER, appd_ngx_cstr_to_ngx((char *)th, r->pool));
+}
 
-    h->lowcase_key = ngx_palloc(r->pool, h->key.len);
-    if (h->lowcase_key != NULL) {
-      ngx_strlow(h->lowcase_key, h->key.data, h->key.len);
+static char * 
+appd_ngx_generate_transaction_name(ngx_http_request_t *r) {
+  // TODO a real naming rule
+  return appd_ngx_to_cstr(r->uri, r->pool);
+}
+
+
+// NOTE these are really only intended for working on the SINGULARITY header
+// and aren't suited for general purpose header manipulation
+static ngx_table_elt_t * 
+appd_ngx_find_header(ngx_http_request_t *r, ngx_str_t *name) {
+  ngx_uint_t i;
+  ngx_list_part_t *part;
+  ngx_table_elt_t *header;
+
+  part = &r->headers_in.headers.part;
+  header = part->elts;
+
+  for (i = 0; /* void */; i++) {
+    if (i >= part->nelts) {
+        if (part->next == NULL) {
+            break;
+        }
+        part = part->next;
+        header = part->elts;
+        i = 0;
     }
+    if (ngx_strcasecmp(header[i].key.data, name->data) == 0) {
+      return &header[i];
+    }
+  }
+  return NULL;
+}
+static void 
+appd_ngx_insert_header(ngx_http_request_t *r, ngx_str_t *name, ngx_str_t *value) {
+  ngx_table_elt_t *header;
+
+  if (name == NULL || value == NULL) {
+    return;
+  }
+
+  header = ngx_list_push(&r->headers_in.headers);
+  if (header != NULL) {
+    header->key = *name;
+    header->value = *value;
+    header->hash = ngx_hash_key(header->key.data, header->key.len);
+
+    header->lowcase_key = ngx_palloc(r->pool, header->key.len);
+    if (header->lowcase_key != NULL) {
+      ngx_strlow(header->lowcase_key, header->key.data, header->key.len);
+    }
+  }
+}
+static void 
+appd_ngx_upsert_header(ngx_http_request_t *r, ngx_str_t *name, ngx_str_t *value) {
+  ngx_table_elt_t *header;
+
+  if (name == NULL || value == NULL) {
+    return;
+  }
+
+  header = appd_ngx_find_header(r, name);
+  if (header == NULL) {
+    appd_ngx_insert_header(r, name, value);
+  } else {
+    header->value = *value;
   }
 }
 
@@ -317,4 +384,17 @@ appd_ngx_to_cstr(ngx_str_t source, ngx_pool_t *pool) {
   char* c = ngx_pcalloc(pool, source.len + 1);
   ngx_memcpy(c, (char *) source.data, source.len);
   return c;
+}
+
+static ngx_str_t * 
+appd_ngx_cstr_to_ngx(char * source, ngx_pool_t *pool) {
+  ngx_str_t *dest;
+
+  dest = ngx_palloc(pool, sizeof(ngx_str_t));
+  if (dest == NULL) {
+    return NULL;
+  }
+  dest->len = ngx_strlen(source);
+  dest->data = (u_char *)source;
+  return dest;
 }
