@@ -163,7 +163,6 @@ appd_ngx_exit_worker(ngx_cycle_t *cycle) {
 static ngx_int_t 
 appd_ngx_rewrite_handler(ngx_http_request_t *r) {
   appd_ngx_tracing_ctx *tc;
-  appd_ngx_loc_conf_t *alcf;
 
   if (r->parent != NULL) {
     // subrequest - ignore
@@ -239,16 +238,20 @@ appd_ngx_backend_begin(ngx_http_request_t *r, appd_ngx_loc_conf_t *alcf, appd_ng
   // this is a bit of a hack - opentelemetry handles correlation header injection by phonying a
   // set_proxy_header in the location config and uses a variable.  For now, we'll just append it
   // to the inbound request headers and assume proxy_pass_request_headers is on
+  // FIXME headers_in may already have a singularity header, so we actually need to find/update that
+  // one instead of pushing a new one onto the headers list
   th = appd_exitcall_get_correlation_header(tc->exit);
   ngx_log_error(NGX_LOG_NOTICE, r->connection->log, 0, "MOD_APPD - correlating exitcall with header %s", th);
   h = ngx_list_push(&r->headers_in.headers);
   if (h != NULL) {
-    h->key.len = strlen(APPD_CORRELATION_HEADER_NAME);
-    h->key.data = APPD_CORRELATION_HEADER_NAME;
-    h->lowcase_key = tolower(APPD_CORRELATION_HEADER_NAME);
-    h->value.len = strlen(th);
-    h->value.data = th;
+    ngx_str_set(&h->key, APPD_CORRELATION_HEADER_NAME);
+    ngx_str_set(&h->value, (const u_char *)th);
     h->hash = ngx_hash_key(h->key.data, h->key.len);
+
+    h->lowcase_key = ngx_palloc(r->pool, h->key.len);
+    if (h->lowcase_key != NULL) {
+      ngx_strlow(h->lowcase_key, h->key.data, h->key.len);
+    }
   }
 }
 
