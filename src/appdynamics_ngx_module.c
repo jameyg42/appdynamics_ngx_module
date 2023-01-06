@@ -36,6 +36,8 @@ appd_ngx_create_loc_conf(ngx_conf_t *cf) {
     return NULL;
   }
 
+  alcf->error_on_4xx = NGX_CONF_UNSET;
+
   return alcf;
 }
 static char * 
@@ -288,10 +290,12 @@ appd_ngx_transaction_begin(ngx_http_request_t *r, appd_ngx_tracing_ctx *tc) {
 }
 static void 
 appd_ngx_transaction_end(ngx_http_request_t *r, appd_ngx_tracing_ctx *tc) {
-  if (appd_ngx_is_http_error(r->err_status)) {
-    // FIXME error message
-    appd_bt_add_error(tc->bt, APPD_LEVEL_ERROR, "HTTP error", APPD_NGX_TRUE);
+  appd_ngx_loc_conf_t *alcf;
+  alcf = ngx_http_get_module_loc_conf(r, appdynamics_ngx_module);
+  if (appd_ngx_is_http_error(alcf, r->err_status)) {
+    appd_bt_add_error(tc->bt, APPD_LEVEL_ERROR, appd_ngx_default_error_message(r->err_status), APPD_NGX_TRUE);
   }
+
   appd_bt_end(tc->bt);
 }
 
@@ -321,15 +325,22 @@ appd_ngx_generate_transaction_name(ngx_http_request_t *r) {
 }
 static void 
 appd_ngx_backend_end(ngx_http_request_t *r, appd_ngx_tracing_ctx *tc) {
+  ngx_uint_t exit_status;
+  appd_ngx_loc_conf_t *alcf;
+
   if (tc->exit == NULL) {
     return;
   }
   if (r->upstream == NULL) {
     appd_exitcall_add_error(tc->exit, APPD_LEVEL_WARNING, "An Nginx configured appdynamics_backend location did not attempt to call an upstream - this may be a configuration issue.", APPD_NGX_FALSE);
   }
-  if (appd_ngx_is_http_error(r->upstream->state->status)) {
-    // FIXME error message
-    appd_exitcall_add_error(tc->exit, APPD_LEVEL_ERROR, "error in backend", APPD_NGX_FALSE);
+
+  alcf = ngx_http_get_module_loc_conf(r, appdynamics_ngx_module);
+  exit_status = r->upstream->state->status;
+  if (appd_ngx_is_http_error(alcf, exit_status)) {
+    appd_exitcall_add_error(tc->exit, APPD_LEVEL_ERROR, appd_ngx_default_error_message(exit_status), APPD_NGX_FALSE);
+  } else if (exit_status >= 400) {
+    appd_exitcall_add_error(tc->exit, APPD_LEVEL_WARNING, appd_ngx_default_error_message(exit_status), APPD_NGX_FALSE);
   }
   // FIXME use r->upstream->state for upstream timings
   appd_exitcall_end(tc->exit);
@@ -473,9 +484,41 @@ appd_ngx_cstr_to_ngx(char * source, ngx_pool_t *pool) {
   return dest;
 }
 
-static appd_ngx_bool_t appd_ngx_is_http_error(ngx_uint_t http_code) {
-  if (http_code >= 500) {
+static appd_ngx_bool_t 
+appd_ngx_is_http_error(appd_ngx_loc_conf_t *alcf, ngx_uint_t http_code) {
+  if ((alcf->error_on_4xx && http_code >= 400) || http_code >= 500) {
     return APPD_NGX_TRUE;
   }
   return APPD_NGX_FALSE;
+}
+
+static const char *
+appd_ngx_default_error_message(ngx_uint_t code) {
+  // ngx_http unfortunately doesn't expose the routine similar to this (status_line)
+  switch (code) {
+    case NGX_HTTP_BAD_REQUEST               : return "HTTP 400 : Bad Request";
+    case NGX_HTTP_UNAUTHORIZED              : return "HTTP 401 : Unauthorized";
+    case NGX_HTTP_FORBIDDEN                 : return "HTTP 403 : Forbidden";
+    case NGX_HTTP_NOT_FOUND                 : return "HTTP 404 : Not Found";
+    case NGX_HTTP_NOT_ALLOWED               : return "HTTP 405 : Not Allowed";
+    case NGX_HTTP_REQUEST_TIME_OUT          : return "HTTP 408 : Request Time Out";
+    case NGX_HTTP_CONFLICT                  : return "HTTP 409 : Conflict";
+    case NGX_HTTP_LENGTH_REQUIRED           : return "HTTP 411 : Length Required";
+    case NGX_HTTP_PRECONDITION_FAILED       : return "HTTP 412 : Precondition Failed";
+    case NGX_HTTP_REQUEST_ENTITY_TOO_LARGE  : return "HTTP 413 : Request Entity Too Large";
+    case NGX_HTTP_REQUEST_URI_TOO_LARGE     : return "HTTP 414 : Request URI Too Large";
+    case NGX_HTTP_UNSUPPORTED_MEDIA_TYPE    : return "HTTP 415 : Unsupported Media Type";
+    case NGX_HTTP_RANGE_NOT_SATISFIABLE     : return "HTTP 416 : Range Not Satisfiable";
+    case NGX_HTTP_MISDIRECTED_REQUEST       : return "HTTP 421 : Misdirected Request";
+    case NGX_HTTP_TOO_MANY_REQUESTS         : return "HTTP 429 : Too Many Requests";
+    case NGX_HTTP_INTERNAL_SERVER_ERROR     : return "HTTP 500 : Internal Server Error";
+    case NGX_HTTP_NOT_IMPLEMENTED           : return "HTTP 501 : Not Implemented";
+    case NGX_HTTP_BAD_GATEWAY               : return "HTTP 502 : Bad Gateway";
+    case NGX_HTTP_SERVICE_UNAVAILABLE       : return "HTTP 503 : Service Unavailable";
+    case NGX_HTTP_GATEWAY_TIME_OUT          : return "HTTP 504 : Gateway Time Out";
+    case NGX_HTTP_VERSION_NOT_SUPPORTED     : return "HTTP 505 : Version Not Supported";
+    case NGX_HTTP_INSUFFICIENT_STORAGE      : return "HTTP 507 : Insufficient Storage";
+  }
+
+  return "Unknown Error";
 }

@@ -31,6 +31,7 @@ typedef struct  {
 } appd_ngx_main_conf_t;
 typedef struct {
   ngx_str_t backend_name;
+  ngx_flag_t error_on_4xx;
 } appd_ngx_loc_conf_t;
 
 typedef struct {
@@ -132,6 +133,14 @@ static ngx_command_t appd_ngx_commands[] = {
     NULL 
   },
 
+  {
+    ngx_string("appdynamics_error_on_4xx"),
+    NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
+    ngx_conf_set_str_slot,
+    NGX_HTTP_LOC_CONF_OFFSET,
+    offsetof(appd_ngx_loc_conf_t, error_on_4xx),
+    NULL
+  },
   ngx_null_command
 };
 
@@ -200,8 +209,9 @@ static void                   appd_ngx_cleanup_module_ctx(void *data);
 
 static char * appd_ngx_to_cstr(ngx_str_t source, ngx_pool_t *pool);
 static ngx_str_t * appd_ngx_cstr_to_ngx(char * source, ngx_pool_t *pool);
-static appd_ngx_bool_t appd_ngx_is_http_error(ngx_uint_t http_code);
+static appd_ngx_bool_t appd_ngx_is_http_error(appd_ngx_loc_conf_t *alcf, ngx_uint_t http_code);
 
+static const char * appd_ngx_default_error_message(ngx_uint_t code);
 
 #endif
 
