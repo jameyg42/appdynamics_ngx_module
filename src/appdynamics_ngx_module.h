@@ -39,6 +39,7 @@ typedef struct {
 typedef struct {
   appd_bt_handle bt;
   appd_exitcall_handle exit;
+  appd_frame_handle frame;
   unsigned closed:1;
 } appd_ngx_tracing_ctx;
 
@@ -200,6 +201,7 @@ ngx_module_t appdynamics_ngx_module = {
 
 
 static ngx_int_t appd_ngx_rewrite_handler(ngx_http_request_t *req);
+static ngx_int_t appd_ngx_preaccess_handler(ngx_http_request_t *req);
 static ngx_int_t appd_ngx_precontent_handler(ngx_http_request_t *req);
 static ngx_int_t appd_ngx_log_handler(ngx_http_request_t *req);
 

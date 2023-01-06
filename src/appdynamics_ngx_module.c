@@ -81,6 +81,12 @@ appd_ngx_postconfiguration(ngx_conf_t *cf) {
     }
     *h = appd_ngx_rewrite_handler;
 
+    h = ngx_array_push(&cmcf->phases[NGX_HTTP_PREACCESS_PHASE].handlers);
+    if (h == NULL) {
+      return NGX_ERROR;
+    }
+    *h = appd_ngx_preaccess_handler;
+
     h = ngx_array_push(&cmcf->phases[NGX_HTTP_PRECONTENT_PHASE].handlers);
     if (h == NULL) {
       return NGX_ERROR;
@@ -225,6 +231,16 @@ appd_ngx_rewrite_handler(ngx_http_request_t *r) {
 
   return NGX_DECLINED;
 }
+static ngx_int_t 
+appd_ngx_preaccess_handler(ngx_http_request_t *r) {
+  appd_ngx_tracing_ctx *tc;
+
+  tc = appd_ngx_get_module_ctx(r);
+  if (tc != NULL && tc->bt != NULL) {
+    tc->frame = appd_frame_begin(tc->bt, APPD_FRAME_TYPE_CPP, "NGINX", "NGX_HTTP_ACCESS_PHASE", "NGINX_ACCESS", __LINE__);
+  }
+  return NGX_DECLINED;
+}
 
 static ngx_int_t 
 appd_ngx_precontent_handler(ngx_http_request_t *r) {
@@ -240,6 +256,14 @@ appd_ngx_precontent_handler(ngx_http_request_t *r) {
   if (tc == NULL) {
     ngx_log_error(NGX_LOG_WARN, r->connection->log, 0, "MOD_APPD - module context unexpectedly not found in PRECONTENT phase");
     return NGX_DECLINED;
+  }
+
+  if (tc-> bt != NULL) {
+    if(tc->frame != NULL) {
+      appd_frame_end(tc->bt, tc->frame);
+      tc->frame = NULL;
+    }
+    tc->frame = appd_frame_begin(tc->bt, APPD_FRAME_TYPE_CPP, "NGINX", "NGX_HTTP_CONTENT_PHASE", "NGINX_CONTENT", __LINE__);
   }
 
   alcf = ngx_http_get_module_loc_conf(r, appdynamics_ngx_module);
@@ -261,6 +285,9 @@ appd_ngx_log_handler(ngx_http_request_t *r) {
 
   tc->closed = 1;
   if (tc->bt != NULL) {
+    if (tc->frame != NULL) {
+      appd_frame_end(tc->bt, tc->frame);
+    }
     if (tc->exit != NULL) {
       appd_ngx_backend_end(r, tc);
     }
