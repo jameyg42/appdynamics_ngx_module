@@ -32,6 +32,8 @@ typedef struct  {
 typedef struct {
   ngx_str_t backend_name;
   ngx_flag_t error_on_4xx;
+  ngx_str_t bt_name;
+  ngx_uint_t bt_name_max_segments;
 } appd_ngx_loc_conf_t;
 
 typedef struct {
@@ -124,6 +126,22 @@ static ngx_command_t appd_ngx_commands[] = {
     NULL
   },
 
+  {
+    ngx_string("appdynamics_bt_name"),
+    NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
+    ngx_conf_set_str_slot,
+    NGX_HTTP_LOC_CONF_OFFSET,
+    offsetof(appd_ngx_loc_conf_t, bt_name),
+    NULL
+  },
+  {
+    ngx_string("appdynamics_bt_name_max_segments"),
+    NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
+    ngx_conf_set_num_slot,
+    NGX_HTTP_LOC_CONF_OFFSET,
+    offsetof(appd_ngx_loc_conf_t, bt_name_max_segments),
+    NULL
+  },
   { 
     ngx_string("appdynamics_backend"),
     NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
@@ -136,7 +154,7 @@ static ngx_command_t appd_ngx_commands[] = {
   {
     ngx_string("appdynamics_error_on_4xx"),
     NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF | NGX_CONF_TAKE1,
-    ngx_conf_set_str_slot,
+    ngx_conf_set_flag_slot,
     NGX_HTTP_LOC_CONF_OFFSET,
     offsetof(appd_ngx_loc_conf_t, error_on_4xx),
     NULL

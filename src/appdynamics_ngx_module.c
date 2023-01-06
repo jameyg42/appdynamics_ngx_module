@@ -35,7 +35,7 @@ appd_ngx_create_loc_conf(ngx_conf_t *cf) {
   if (alcf == NULL) {
     return NULL;
   }
-
+  alcf->bt_name_max_segments = NGX_CONF_UNSET;
   alcf->error_on_4xx = NGX_CONF_UNSET;
 
   return alcf;
@@ -58,6 +58,9 @@ appd_ngx_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child) {
       *s = conf->backend_name;
     }
   }
+  ngx_conf_merge_str_value(conf->bt_name, prev->bt_name, "");
+  ngx_conf_merge_uint_value(conf->bt_name_max_segments, prev->bt_name_max_segments, 3);
+  ngx_conf_merge_value(conf->error_on_4xx, prev->error_on_4xx, 1);
 
   return NGX_CONF_OK;
 }
@@ -320,8 +323,51 @@ appd_ngx_backend_begin(ngx_http_request_t *r, appd_ngx_loc_conf_t *alcf, appd_ng
 
 static char * 
 appd_ngx_generate_transaction_name(ngx_http_request_t *r) {
-  // TODO a real naming rule
-  return appd_ngx_to_cstr(r->uri, r->pool);
+  appd_ngx_loc_conf_t *alcf;
+  ngx_str_t u;
+  ngx_str_t bt_name;
+  ngx_uint_t e, s, i;
+
+
+  alcf = ngx_http_get_module_loc_conf(r, appdynamics_ngx_module);
+  if (alcf->bt_name.len > 0) {
+    // transaction has an explicitly configured name from location
+    return (char *)alcf->bt_name.data;
+  }
+
+  // otherwise derive the name from URL
+  u = r->uri;
+  for (i = 0, s = 0, e = 1; i < u.len; i++, e++) {
+    if (i > 0 && u.data[i] == '/') {
+      if (++s == alcf->bt_name_max_segments) {
+        goto done;
+      }
+    }
+  }
+
+  // we don't want to create BTs for individual files
+  // here, a "file" is a URL where the last segment doesn't end w/ a forward-slash
+  // and appears to have a file extension
+  if (i == u.len && u.data[i-1] != '/') {
+    for (; i > 0 && i > (u.len - 5); i--) {
+      if (u.data[i-1] == '.') {
+        for (; i > 0; i--) {
+          if (i == 1) {  // u.data[0] *should* always be /
+            return "/";
+          } 
+          else if (u.data[i-1] == '/') { 
+            e = i;
+            goto done;
+          }
+        }
+      }
+    }
+  } 
+  done:
+
+  bt_name.len = e;
+  bt_name.data = u.data;
+  return appd_ngx_to_cstr(bt_name, r->pool);
 }
 static void 
 appd_ngx_backend_end(ngx_http_request_t *r, appd_ngx_tracing_ctx *tc) {

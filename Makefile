@@ -42,11 +42,16 @@ cycle: compile run
 test:
 	for a in $$(seq 100); do \
 		curl http://localhost:8888/; \
+		curl http://localhost:8888/index.html; \
 		curl http://localhost:8888/proxy-local/; \
 		curl http://localhost:8888/proxy-remote/; \
-		curl http://localhost:8888/index.html; \
 		curl http://localhost:8888/proxy-remote/; \
 		curl http://localhost:8888/proxy-remote-upstream/; \
-		curl http://localhost:8888/login; \
+		curl http://localhost:8888/login/; \
+		curl http://localhost:8888/foo/index.html; \
+		curl http://localhost:8888/foo/index.html/; \
+		curl http://localhost:8888/foo/bar; \
+		curl http://localhost:8888/11/22/33/44/55; \
+		curl http://localhost:8888/11/22/33/index.html; \
 		sleep 2; \
 	done
