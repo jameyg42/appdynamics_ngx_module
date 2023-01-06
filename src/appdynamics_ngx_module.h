@@ -1,5 +1,5 @@
-#ifndef _APPD_NGX_MODULE_H_INCLUDED_
-#define _APPD_NGX_MODULE_H_INCLUDED_
+#ifndef _APPDYNAMICS_NGX_MODULE_H_INCLUDED_
+#define _APPDYNAMICS_NGX_MODULE_H_INCLUDED_
 
 #include <nginx.h>
 #include <ngx_core.h>
@@ -7,9 +7,13 @@
 #include <ngx_config.h>
 
 #include <appdynamics.h>
-#define APPD_OK  0 /* AppD API says 0 is OK, nonzero is FAIL */
 
 extern ngx_module_t appdynamics_ngx_module;
+
+#define APPD_NGX_OK  0 /* AppD API says 0 is OK, nonzero is FAIL */
+#define APPD_NGX_TRUE 1
+#define APPD_NGX_FALSE 0
+typedef ngx_uint_t appd_ngx_bool_t;
 
 typedef struct  {
   ngx_flag_t enabled;
@@ -18,6 +22,7 @@ typedef struct  {
   ngx_flag_t controller_use_ssl;
   ngx_str_t controller_account;
   ngx_str_t controller_access_key;
+  ngx_str_t controller_certificate_file;
   
   ngx_str_t agent_app_name;
   ngx_str_t agent_tier_name;
@@ -83,6 +88,14 @@ static ngx_command_t appd_ngx_commands[] = {
     NGX_HTTP_MAIN_CONF_OFFSET,
     offsetof(appd_ngx_main_conf_t, controller_access_key),
     NULL
+  },
+  { 
+    ngx_string("appdynamics_controller_certificate_file"),
+    NGX_HTTP_MAIN_CONF | NGX_CONF_TAKE1,
+    ngx_conf_set_str_slot,
+    NGX_HTTP_MAIN_CONF_OFFSET,
+    offsetof(appd_ngx_main_conf_t, controller_certificate_file),
+    NULL 
   },
 
   {
@@ -165,6 +178,8 @@ static ngx_int_t appd_ngx_log_handler(ngx_http_request_t *req);
 
 static ngx_int_t appd_ngx_sdk_init(ngx_cycle_t *cycle, appd_ngx_main_conf_t *amcf);
 static ngx_int_t appd_ngx_backends_init(ngx_cycle_t *cycle, appd_ngx_main_conf_t *amcf);
+static ngx_int_t appd_ngx_register_backend(appd_ngx_main_conf_t *amcf, char *backend);
+static appd_ngx_bool_t appd_ngx_is_backend_registered(appd_ngx_main_conf_t *amcf, char *backend);
 
 static void appd_ngx_transaction_begin(ngx_http_request_t *r, appd_ngx_tracing_ctx *tc);
 static void appd_ngx_transaction_end(ngx_http_request_t *r, appd_ngx_tracing_ctx *tc);
@@ -185,9 +200,8 @@ static void                   appd_ngx_cleanup_module_ctx(void *data);
 
 static char * appd_ngx_to_cstr(ngx_str_t source, ngx_pool_t *pool);
 static ngx_str_t * appd_ngx_cstr_to_ngx(char * source, ngx_pool_t *pool);
-static ngx_uint_t appd_ngx_is_http_error(ngx_uint_t http_code);
+static appd_ngx_bool_t appd_ngx_is_http_error(ngx_uint_t http_code);
 
-#define APPD_NGX_TRUE 1
-#define APPD_NGX_FALSE 0
+
 #endif
 

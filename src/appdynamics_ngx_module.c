@@ -48,12 +48,13 @@ appd_ngx_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child) {
   ngx_conf_merge_str_value(conf->backend_name, prev->backend_name, "");
   if (conf->backend_name.len > 0) {
     amcf = ngx_http_conf_get_module_main_conf(cf, appdynamics_ngx_module);
-    // TODO only add backend if it's not already there
-    s = ngx_array_push(&amcf->backend_names);
-    if (s == NULL) {
-      return NGX_CONF_ERROR;
+    if (!appd_ngx_is_backend_registered(amcf, (char *)conf->backend_name.data)) {
+      s = ngx_array_push(&amcf->backend_names);
+      if (s == NULL) {
+        return NGX_CONF_ERROR;
+      }
+      *s = conf->backend_name;
     }
-    *s = conf->backend_name;
   }
 
   return NGX_CONF_OK;
@@ -126,12 +127,14 @@ appd_ngx_sdk_init(ngx_cycle_t *cycle, appd_ngx_main_conf_t *amcf) {
   appd_config_set_controller_account(cfg, (const char*)amcf->controller_account.data);
   appd_config_set_controller_access_key(cfg, (const char*)amcf->controller_access_key.data);
   appd_config_set_controller_use_ssl(cfg, amcf->controller_use_ssl);
+  if (amcf->controller_certificate_file.len > 0) {
+    appd_config_set_controller_certificate_file(cfg, (const char*)amcf->controller_certificate_file.data);
+  }
   appd_config_set_app_name(cfg, (const char*)amcf->agent_app_name.data);
   appd_config_set_tier_name(cfg, (const char*)amcf->agent_tier_name.data);
   appd_config_set_node_name(cfg, (const char*)amcf->agent_node_name.data);
-  appd_config_set_controller_certificate_dir(cfg, "/etc/ssl/certs");
 
-  if (appd_sdk_init(cfg) != APPD_OK) {
+  if (appd_sdk_init(cfg) != APPD_NGX_OK) {
     return NGX_ERROR;
   }
   return NGX_OK;
@@ -147,16 +150,40 @@ appd_ngx_backends_init(ngx_cycle_t *cycle, appd_ngx_main_conf_t *amcf) {
   for (i = 0; i < amcf->backend_names.nelts; i++) {
     backend = (char *)backends[i].data;
     ngx_log_error(NGX_LOG_NOTICE, cycle->log, 0, "MOD_APPD - registering backend %s", backend);
-    appd_backend_declare(APPD_BACKEND_HTTP, backend);
-    if (appd_backend_set_identifying_property(backend, "HOST", backend) != APPD_OK) {
+    if (appd_ngx_register_backend(amcf, backend) != NGX_OK) {
+      ngx_log_error(NGX_LOG_NOTICE, cycle->log, 0, "MOD_APPD - failed to register backend %s", backend);
       return NGX_ERROR;
-    }
-    if (appd_backend_add(backend) != APPD_OK) {
-      ngx_log_error(NGX_LOG_NOTICE, cycle->log, 0, "MOD_APPD - failed to register backend %s - assuming this is because the backend was already registered", backend);
     }
   }
   return NGX_OK;
 }
+static ngx_int_t 
+appd_ngx_register_backend(appd_ngx_main_conf_t *amcf, char *backend) {
+  appd_backend_declare(APPD_BACKEND_HTTP, backend);
+  if (appd_backend_set_identifying_property(backend, "HOST", backend) != APPD_NGX_OK) {
+    return NGX_ERROR;
+  }
+  if (appd_backend_add(backend) != APPD_NGX_OK) {
+    return NGX_ERROR;
+  }
+  return NGX_OK;
+}
+
+static appd_ngx_bool_t 
+appd_ngx_is_backend_registered(appd_ngx_main_conf_t *amcf, char *backend) {
+  ngx_uint_t i;
+  ngx_str_t  *backends;
+
+  backends = amcf->backend_names.elts;
+  for (i = 0; i < amcf->backend_names.nelts; i++) {
+    // TODO are backend names case sensitive?
+    if (ngx_strcmp(backend, backends[i].data) == 0) {
+      return APPD_NGX_TRUE;
+    }
+  }
+  return APPD_NGX_FALSE;
+};
+
 
 static void 
 appd_ngx_exit_worker(ngx_cycle_t *cycle) {
@@ -407,6 +434,7 @@ appd_ngx_get_module_ctx(ngx_http_request_t *r) {
   }
   return ctx;
 }
+
 static void
 appd_ngx_cleanup_module_ctx(void *data) {
   appd_ngx_tracing_ctx *tc = data;
@@ -445,7 +473,7 @@ appd_ngx_cstr_to_ngx(char * source, ngx_pool_t *pool) {
   return dest;
 }
 
-static ngx_uint_t appd_ngx_is_http_error(ngx_uint_t http_code) {
+static appd_ngx_bool_t appd_ngx_is_http_error(ngx_uint_t http_code) {
   if (http_code >= 500) {
     return APPD_NGX_TRUE;
   }
