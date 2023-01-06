@@ -31,6 +31,7 @@ typedef struct {
 typedef struct {
   appd_bt_handle bt;
   appd_exitcall_handle exit;
+  unsigned closed:1;
 } appd_ngx_tracing_ctx;
 
 
@@ -160,19 +161,22 @@ ngx_module_t appdynamics_ngx_module = {
 
 static ngx_int_t appd_ngx_rewrite_handler(ngx_http_request_t *req);
 static ngx_int_t appd_ngx_precontent_handler(ngx_http_request_t *req);
+static ngx_int_t appd_ngx_log_handler(ngx_http_request_t *req);
 
 static ngx_int_t appd_ngx_sdk_init(ngx_cycle_t *cycle, appd_ngx_main_conf_t *amcf);
 static ngx_int_t appd_ngx_backends_init(ngx_cycle_t *cycle, appd_ngx_main_conf_t *amcf);
 
 static void appd_ngx_transaction_begin(ngx_http_request_t *r, appd_ngx_tracing_ctx *tc);
-//static void appd_ngx_transaction_end(ngx_http_request_t *r, appd_ngx_tracing_ctx *tc);
+static void appd_ngx_transaction_end(ngx_http_request_t *r, appd_ngx_tracing_ctx *tc);
 static void appd_ngx_backend_begin(ngx_http_request_t *r, appd_ngx_loc_conf_t *alcf, appd_ngx_tracing_ctx *tc);
-//static void appd_ngx_backend_end(ngx_http_request_t *r, appd_ngx_tracing_ctx *tc);
+static void appd_ngx_backend_end(ngx_http_request_t *r, appd_ngx_tracing_ctx *tc);
 
 static char * appd_ngx_generate_transaction_name(ngx_http_request_t *r);
+
 static ngx_table_elt_t * appd_ngx_find_header(ngx_http_request_t *r, ngx_str_t *name);
 static void appd_ngx_insert_header(ngx_http_request_t *r, ngx_str_t *name, ngx_str_t *value);
 static void appd_ngx_upsert_header(ngx_http_request_t *r, ngx_str_t *name, ngx_str_t *value);
+static ngx_str_t APPD_NGX_SINGULARITY_HEADER = ngx_string(APPD_CORRELATION_HEADER_NAME);
 
 static appd_ngx_tracing_ctx * appd_ngx_get_module_ctx(ngx_http_request_t *r);
 static ngx_int_t              appd_ngx_set_module_ctx(ngx_http_request_t *r, appd_ngx_tracing_ctx *ctx);
@@ -181,8 +185,9 @@ static void                   appd_ngx_cleanup_module_ctx(void *data);
 
 static char * appd_ngx_to_cstr(ngx_str_t source, ngx_pool_t *pool);
 static ngx_str_t * appd_ngx_cstr_to_ngx(char * source, ngx_pool_t *pool);
+static ngx_uint_t appd_ngx_is_http_error(ngx_uint_t http_code);
 
-static ngx_str_t APPD_NGX_SINGULARITY_HEADER = ngx_string(APPD_CORRELATION_HEADER_NAME);
-
+#define APPD_NGX_TRUE 1
+#define APPD_NGX_FALSE 0
 #endif
 

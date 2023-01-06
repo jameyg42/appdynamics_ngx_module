@@ -80,6 +80,12 @@ appd_ngx_postconfiguration(ngx_conf_t *cf) {
       return NGX_ERROR;
     }
     *h = appd_ngx_precontent_handler;
+
+    h = ngx_array_push(&cmcf->phases[NGX_HTTP_LOG_PHASE].handlers);
+    if (h == NULL) {
+      return NGX_ERROR;
+    }
+    *h = appd_ngx_log_handler;
   }
   
   return NGX_OK;
@@ -211,6 +217,26 @@ appd_ngx_precontent_handler(ngx_http_request_t *r) {
 
   return NGX_DECLINED;
 }
+static ngx_int_t 
+appd_ngx_log_handler(ngx_http_request_t *r) {
+  appd_ngx_tracing_ctx *tc;
+
+  tc = appd_ngx_get_module_ctx(r);
+  if (tc == NULL) {
+    ngx_log_error(NGX_LOG_WARN, r->connection->log, 0, "MOD_APPD - module context unexpectedly not found in LOG phase");
+    return NGX_DECLINED;
+  }
+
+  tc->closed = 1;
+  if (tc->bt != NULL) {
+    if (tc->exit != NULL) {
+      appd_ngx_backend_end(r, tc);
+    }
+    appd_ngx_transaction_end(r, tc);
+  }
+
+  return NGX_DECLINED;
+}
 
 
 
@@ -232,6 +258,14 @@ appd_ngx_transaction_begin(ngx_http_request_t *r, appd_ngx_tracing_ctx *tc) {
 
   url = appd_ngx_to_cstr(r->uri, r->pool);
   appd_bt_set_url(tc->bt, url);
+}
+static void 
+appd_ngx_transaction_end(ngx_http_request_t *r, appd_ngx_tracing_ctx *tc) {
+  if (appd_ngx_is_http_error(r->err_status)) {
+    // FIXME error message
+    appd_bt_add_error(tc->bt, APPD_LEVEL_ERROR, "HTTP error", APPD_NGX_TRUE);
+  }
+  appd_bt_end(tc->bt);
 }
 
 static void
@@ -257,6 +291,21 @@ static char *
 appd_ngx_generate_transaction_name(ngx_http_request_t *r) {
   // TODO a real naming rule
   return appd_ngx_to_cstr(r->uri, r->pool);
+}
+static void 
+appd_ngx_backend_end(ngx_http_request_t *r, appd_ngx_tracing_ctx *tc) {
+  if (tc->exit == NULL) {
+    return;
+  }
+  if (r->upstream == NULL) {
+    appd_exitcall_add_error(tc->exit, APPD_LEVEL_WARNING, "An Nginx configured appdynamics_backend location did not attempt to call an upstream - this may be a configuration issue.", APPD_NGX_FALSE);
+  }
+  if (appd_ngx_is_http_error(r->upstream->state->status)) {
+    // FIXME error message
+    appd_exitcall_add_error(tc->exit, APPD_LEVEL_ERROR, "error in backend", APPD_NGX_FALSE);
+  }
+  // FIXME use r->upstream->state for upstream timings
+  appd_exitcall_end(tc->exit);
 }
 
 
@@ -360,23 +409,20 @@ appd_ngx_get_module_ctx(ngx_http_request_t *r) {
 }
 static void
 appd_ngx_cleanup_module_ctx(void *data) {
-  // TODO ideally we'd still be ending these in the LOG phase handler
-  // of the "main" request (no subrequests).  But it's not currently clear
-  // if the LOG phase will ALWAYS be called for the main request (even
-  // if the main requests gets swapped out by an internal redirect).
-  // We can probably attempt cleanup in LOG phase, and use this simply as a 
-  // just-in-case backup
-  // The biggest downside of doing it here is that we don't have the
-  // request status
   appd_ngx_tracing_ctx *tc = data;
-  if (tc->bt != NULL) {
-    if (tc->exit != NULL) {
-      appd_exitcall_end(tc->exit);
+
+  if (!tc->closed) {
+    // we SHOULD already be closed from the LOG phase handler, but
+    // in case we're here and still open, clean up
+    if (tc->bt != NULL) {
+      if (tc->exit != NULL) {
+        appd_exitcall_end(tc->exit);
+      }
+      appd_bt_add_error(tc->bt, APPD_LEVEL_NOTICE, "transaction closed with unknown status", 0);
+      appd_bt_end(tc->bt);
     }
-    appd_bt_end(tc->bt);
   }
 }
-
 
 /***** HELPERS *****/
 static char *
@@ -397,4 +443,11 @@ appd_ngx_cstr_to_ngx(char * source, ngx_pool_t *pool) {
   dest->len = ngx_strlen(source);
   dest->data = (u_char *)source;
   return dest;
+}
+
+static ngx_uint_t appd_ngx_is_http_error(ngx_uint_t http_code) {
+  if (http_code >= 500) {
+    return APPD_NGX_TRUE;
+  }
+  return APPD_NGX_FALSE;
 }
