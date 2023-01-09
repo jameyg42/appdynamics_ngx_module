@@ -35,6 +35,10 @@ appd_ngx_create_loc_conf(ngx_conf_t *cf) {
   if (alcf == NULL) {
     return NULL;
   }
+  if (ngx_array_init(&alcf->collectors, cf->pool, 4, sizeof(appd_ngx_collector_t)) != NGX_OK) {
+    return NULL;
+  }
+
   alcf->bt_name_max_segments = NGX_CONF_UNSET;
   alcf->error_on_4xx = NGX_CONF_UNSET;
 
@@ -46,6 +50,8 @@ appd_ngx_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child) {
   appd_ngx_loc_conf_t *conf = child;
   appd_ngx_main_conf_t *amcf;
   ngx_str_t *s;
+  ngx_uint_t i;
+  appd_ngx_collector_t *pcc, *c;
 
   ngx_conf_merge_str_value(conf->backend_name, prev->backend_name, "");
   if (conf->backend_name.len > 0) {
@@ -58,12 +64,56 @@ appd_ngx_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child) {
       *s = conf->backend_name;
     }
   }
+
   ngx_conf_merge_str_value(conf->bt_name, prev->bt_name, "");
   ngx_conf_merge_uint_value(conf->bt_name_max_segments, prev->bt_name_max_segments, 3);
   ngx_conf_merge_value(conf->error_on_4xx, prev->error_on_4xx, 1);
 
+  pcc = prev->collectors.elts; 
+  for (i = 0; i < prev->collectors.nelts; i++) {
+    c = ngx_array_push(&conf->collectors);
+    if (c == NULL) {
+      return NGX_CONF_ERROR;
+    }
+    c = &pcc[i];
+  }
+
   return NGX_CONF_OK;
 }
+
+static char *
+appd_ngx_collectors_add(ngx_conf_t *cf, ngx_command_t *cmd, void *conf) {
+  appd_ngx_loc_conf_t  *alcf = conf;
+  appd_ngx_collector_t *c;
+  ngx_str_t            *value;
+  ngx_http_compile_complex_value_t ccv;
+
+  value = cf->args->elts;
+
+  c = ngx_array_push(&alcf->collectors);
+  if (c == NULL) {
+    return NGX_CONF_ERROR;
+  }
+
+  c->name = value[1];
+  if (value[2].len == 0) {
+    ngx_memzero(&c->value, sizeof(ngx_http_complex_value_t));
+  } else {
+    ngx_memzero(&ccv, sizeof(ngx_http_compile_complex_value_t));
+
+    ccv.cf = cf;
+    ccv.value = &value[2];
+    ccv.complex_value = &c->value;
+
+    if (ngx_http_compile_complex_value(&ccv) != NGX_OK) {
+      return NGX_CONF_ERROR;
+    }
+  }
+
+  return NGX_CONF_OK;
+}
+
+
 static ngx_int_t 
 appd_ngx_postconfiguration(ngx_conf_t *cf) {
   ngx_http_handler_pt        *h;
@@ -291,6 +341,7 @@ appd_ngx_log_handler(ngx_http_request_t *r) {
     if (tc->exit != NULL) {
       appd_ngx_backend_end(r, tc);
     }
+    appd_ngx_collect_transaction_data(r, tc);
     appd_ngx_transaction_end(r, tc);
   }
 
@@ -340,9 +391,8 @@ appd_ngx_backend_begin(ngx_http_request_t *r, appd_ngx_loc_conf_t *alcf, appd_ng
 
   // this is a bit of a hack - opentelemetry handles correlation header injection by phonying a
   // set_proxy_header in the location config and uses a variable.  For now, we'll just append it
-  // to the inbound request headers and assume proxy_pass_request_headers is on
-  // FIXME headers_in may already have a singularity header, so we actually need to find/update that
-  // one instead of pushing a new one onto the headers list
+  // (or update the existing) to the inbound request headers and assume proxy_pass_request_headers 
+  // is 'on'
   th = appd_exitcall_get_correlation_header(tc->exit);
   ngx_log_error(NGX_LOG_NOTICE, r->connection->log, 0, "MOD_APPD - correlating exitcall with header %s", th);
   appd_ngx_upsert_header(r, &APPD_NGX_SINGULARITY_HEADER, appd_ngx_cstr_to_ngx((char *)th, r->pool));
@@ -417,6 +467,23 @@ appd_ngx_backend_end(ngx_http_request_t *r, appd_ngx_tracing_ctx *tc) {
   }
   // FIXME use r->upstream->state for upstream timings
   appd_exitcall_end(tc->exit);
+}
+
+static void appd_ngx_collect_transaction_data(ngx_http_request_t *r, appd_ngx_tracing_ctx *tc) {
+  appd_ngx_loc_conf_t  *alcf;
+  ngx_uint_t            i;
+  appd_ngx_collector_t *cc,*c;
+  ngx_str_t             cv;
+
+  alcf = ngx_http_get_module_loc_conf(r, appdynamics_ngx_module);
+  cc = alcf->collectors.elts;
+  for (i = 0; i < alcf->collectors.nelts; i++) {
+    c = &cc[i];
+    ngx_http_complex_value(r, &c->value, &cv); // intentionally ignore errors
+    if (cv.len > 0) {
+      appd_bt_add_user_data(tc->bt, (const char *)c->name.data, appd_ngx_to_cstr(cv, r->pool));
+    }
+  }
 }
 
 

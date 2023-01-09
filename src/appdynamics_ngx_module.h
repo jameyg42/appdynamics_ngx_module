@@ -17,32 +17,41 @@ typedef ngx_uint_t appd_ngx_bool_t;
 
 typedef struct  {
   ngx_flag_t enabled;
-  ngx_str_t controller_hostname;
-  ngx_int_t controller_port;
+  ngx_str_t  controller_hostname;
+  ngx_int_t  controller_port;
   ngx_flag_t controller_use_ssl;
-  ngx_str_t controller_account;
-  ngx_str_t controller_access_key;
-  ngx_str_t controller_certificate_file;
+  ngx_str_t  controller_account;
+  ngx_str_t  controller_access_key;
+  ngx_str_t  controller_certificate_file;
   
-  ngx_str_t agent_app_name;
-  ngx_str_t agent_tier_name;
-  ngx_str_t agent_node_name;
+  ngx_str_t   agent_app_name;
+  ngx_str_t   agent_tier_name;
+  ngx_str_t   agent_node_name;
   ngx_array_t backend_names; /* ngx_str_t - collect all the backend names here so they can be init'd */
 } appd_ngx_main_conf_t;
-typedef struct {
-  ngx_str_t backend_name;
-  ngx_flag_t error_on_4xx;
-  ngx_str_t bt_name;
-  ngx_uint_t bt_name_max_segments;
-} appd_ngx_loc_conf_t;
 
 typedef struct {
-  appd_bt_handle bt;
+  ngx_str_t   bt_name;
+  ngx_uint_t  bt_name_max_segments;
+  ngx_str_t   backend_name;
+  ngx_array_t collectors;
+  ngx_flag_t  error_on_4xx;
+} appd_ngx_loc_conf_t;
+typedef struct {
+  ngx_str_t                name;
+  ngx_http_complex_value_t value;
+} appd_ngx_collector_t;
+
+typedef struct {
+  appd_bt_handle       bt;
   appd_exitcall_handle exit;
-  appd_frame_handle frame;
-  unsigned closed:1;
+  appd_frame_handle    frame;
+
+  unsigned             closed:1;
 } appd_ngx_tracing_ctx;
 
+
+static char *appd_ngx_collectors_add(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 
 static ngx_command_t appd_ngx_commands[] = {
   {
@@ -151,6 +160,14 @@ static ngx_command_t appd_ngx_commands[] = {
     offsetof(appd_ngx_loc_conf_t, backend_name),
     NULL 
   },
+  {
+    ngx_string("appdynamics_add_collector"),
+    NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF | NGX_CONF_TAKE2,
+    appd_ngx_collectors_add,
+    NGX_HTTP_LOC_CONF_OFFSET,
+    offsetof(appd_ngx_loc_conf_t, collectors),
+    NULL
+  },
 
   {
     ngx_string("appdynamics_error_on_4xx"),
@@ -215,6 +232,7 @@ static void appd_ngx_transaction_end(ngx_http_request_t *r, appd_ngx_tracing_ctx
 static void appd_ngx_backend_begin(ngx_http_request_t *r, appd_ngx_loc_conf_t *alcf, appd_ngx_tracing_ctx *tc);
 static void appd_ngx_backend_end(ngx_http_request_t *r, appd_ngx_tracing_ctx *tc);
 
+static void appd_ngx_collect_transaction_data(ngx_http_request_t *r, appd_ngx_tracing_ctx *tc);
 static char * appd_ngx_generate_transaction_name(ngx_http_request_t *r);
 
 static ngx_table_elt_t * appd_ngx_find_header(ngx_http_request_t *r, ngx_str_t *name);
