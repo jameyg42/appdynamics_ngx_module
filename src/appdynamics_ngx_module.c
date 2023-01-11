@@ -22,6 +22,7 @@ appd_ngx_create_main_config(ngx_conf_t *cf) {
 static char *
 appd_ngx_init_main_config(ngx_conf_t *cf, void *conf) {
   appd_ngx_main_conf_t *amcf = conf;
+
   if (amcf->enabled) {
     // TODO validate configuration
   }
@@ -31,6 +32,7 @@ appd_ngx_init_main_config(ngx_conf_t *cf, void *conf) {
 static void * 
 appd_ngx_create_loc_conf(ngx_conf_t *cf) {
   appd_ngx_loc_conf_t *alcf;
+
   alcf = ngx_pcalloc(cf->pool, sizeof(appd_ngx_loc_conf_t));
   if (alcf == NULL) {
     return NULL;
@@ -46,12 +48,12 @@ appd_ngx_create_loc_conf(ngx_conf_t *cf) {
 }
 static char * 
 appd_ngx_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child) {
-  appd_ngx_loc_conf_t *prev = parent;
-  appd_ngx_loc_conf_t *conf = child;
+  appd_ngx_loc_conf_t  *prev = parent;
+  appd_ngx_loc_conf_t  *conf = child;
   appd_ngx_main_conf_t *amcf;
+  appd_ngx_collector_t *pcc, *c;
   ngx_str_t *s;
   ngx_uint_t i;
-  appd_ngx_collector_t *pcc, *c;
 
   ngx_conf_merge_str_value(conf->backend_name, prev->backend_name, "");
   if (conf->backend_name.len > 0) {
@@ -116,9 +118,9 @@ appd_ngx_collectors_add(ngx_conf_t *cf, ngx_command_t *cmd, void *conf) {
 
 static ngx_int_t 
 appd_ngx_postconfiguration(ngx_conf_t *cf) {
-  ngx_http_handler_pt        *h;
-  ngx_http_core_main_conf_t  *cmcf;
-  appd_ngx_main_conf_t       *amcf;
+  ngx_http_handler_pt       *h;
+  ngx_http_core_main_conf_t *cmcf;
+  appd_ngx_main_conf_t      *amcf;
 
   amcf = ngx_http_conf_get_module_main_conf(cf, appdynamics_ngx_module);
 
@@ -158,6 +160,7 @@ appd_ngx_postconfiguration(ngx_conf_t *cf) {
 static ngx_int_t 
 appd_ngx_init_worker(ngx_cycle_t *cycle) {
   appd_ngx_main_conf_t *amcf;
+
   amcf = ngx_http_cycle_get_module_main_conf(cycle, appdynamics_ngx_module);
   if (amcf->enabled) {
     if (appd_ngx_sdk_init(cycle, amcf) != NGX_OK) {
@@ -174,7 +177,7 @@ appd_ngx_init_worker(ngx_cycle_t *cycle) {
 static ngx_int_t
 appd_ngx_sdk_init(ngx_cycle_t *cycle, appd_ngx_main_conf_t *amcf) {
   u_char *nn;
-  size_t nl;
+  size_t  nl;
 
   cycle->log->action = "initializing AppDynamics SDK";
   ngx_log_error(NGX_LOG_NOTICE, cycle->log, 0, "MOD_APPD - controller_host      : %V:%d", &amcf->controller_hostname, amcf->controller_port);
@@ -318,7 +321,7 @@ appd_ngx_preaccess_handler(ngx_http_request_t *r) {
 static ngx_int_t 
 appd_ngx_precontent_handler(ngx_http_request_t *r) {
   appd_ngx_tracing_ctx *tc;
-  appd_ngx_loc_conf_t *alcf;
+  appd_ngx_loc_conf_t  *alcf;
 
   if (r->parent != NULL) {
     // subrequest
@@ -395,6 +398,7 @@ appd_ngx_transaction_begin(ngx_http_request_t *r, appd_ngx_tracing_ctx *tc) {
 static void 
 appd_ngx_transaction_end(ngx_http_request_t *r, appd_ngx_tracing_ctx *tc) {
   appd_ngx_loc_conf_t *alcf;
+
   alcf = ngx_http_get_module_loc_conf(r, appdynamics_ngx_module);
   if (appd_ngx_is_http_error(alcf, r->err_status)) {
     appd_bt_add_error(tc->bt, APPD_LEVEL_ERROR, appd_ngx_default_error_message(r->err_status), APPD_NGX_TRUE);
@@ -425,10 +429,9 @@ appd_ngx_backend_begin(ngx_http_request_t *r, appd_ngx_loc_conf_t *alcf, appd_ng
 static char * 
 appd_ngx_generate_transaction_name(ngx_http_request_t *r) {
   appd_ngx_loc_conf_t *alcf;
-  ngx_str_t u;
-  ngx_str_t bt_name;
+  ngx_str_t  u;
+  ngx_str_t  bt_name;
   ngx_uint_t e, s, i;
-
 
   alcf = ngx_http_get_module_loc_conf(r, appdynamics_ngx_module);
   if (alcf->bt_name.len > 0) {
@@ -472,8 +475,8 @@ appd_ngx_generate_transaction_name(ngx_http_request_t *r) {
 }
 static void 
 appd_ngx_backend_end(ngx_http_request_t *r, appd_ngx_tracing_ctx *tc) {
-  ngx_uint_t exit_status;
   appd_ngx_loc_conf_t *alcf;
+  ngx_uint_t           exit_status;
 
   if (tc->exit == NULL) {
     return;
@@ -515,9 +518,9 @@ static void appd_ngx_collect_transaction_data(ngx_http_request_t *r, appd_ngx_tr
 // and aren't suited for general purpose header manipulation
 static ngx_table_elt_t * 
 appd_ngx_find_header(ngx_http_request_t *r, ngx_str_t *name) {
-  ngx_uint_t i;
   ngx_list_part_t *part;
   ngx_table_elt_t *header;
+  ngx_uint_t       i;
 
   part = &r->headers_in.headers.part;
   header = part->elts;
@@ -585,6 +588,7 @@ appd_ngx_upsert_header(ngx_http_request_t *r, ngx_str_t *name, ngx_str_t *value)
 static ngx_int_t
 appd_ngx_set_module_ctx(ngx_http_request_t *r, appd_ngx_tracing_ctx *ctx) {
   ngx_pool_cleanup_t  *cln;
+
   cln = ngx_pool_cleanup_add(r->pool, 0);
   if (cln == NULL) { 
     return NGX_ERROR;
@@ -598,8 +602,8 @@ appd_ngx_set_module_ctx(ngx_http_request_t *r, appd_ngx_tracing_ctx *ctx) {
 
 static appd_ngx_tracing_ctx * 
 appd_ngx_get_module_ctx(ngx_http_request_t *r) {
-  ngx_pool_cleanup_t    *cln;
-  appd_ngx_tracing_ctx  *ctx = NULL;
+  ngx_pool_cleanup_t   *cln;
+  appd_ngx_tracing_ctx *ctx = NULL;
 
   for (cln = r->pool->cleanup; cln; cln = cln->next) {
     if (cln->handler == appd_ngx_cleanup_module_ctx) {
