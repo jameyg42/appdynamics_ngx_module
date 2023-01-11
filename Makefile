@@ -36,6 +36,8 @@ build-dynamic: configure-dynamic build-nginx
 
 run:
 	LD_LIBRARY_PATH=./vendor/appdynamics-cpp-sdk/lib ./build/nginx/sbin/nginx
+stop:
+	LD_LIBRARY_PATH=./vendor/appdynamics-cpp-sdk/lib ./build/nginx/sbin/nginx -s stop
 
 cycle: compile run
 

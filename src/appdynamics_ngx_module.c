@@ -167,15 +167,15 @@ appd_ngx_init_worker(ngx_cycle_t *cycle) {
     if (appd_ngx_backends_init(cycle, amcf) != NGX_OK) {
       return NGX_ERROR;
     }
-
-    // seed the random number generator used by appd_ngx_get_state_key
-    srand((int)ngx_time());
   }
   return NGX_OK;
 }
 
 static ngx_int_t
 appd_ngx_sdk_init(ngx_cycle_t *cycle, appd_ngx_main_conf_t *amcf) {
+  u_char *nn;
+  size_t nl;
+
   cycle->log->action = "initializing AppDynamics SDK";
   ngx_log_error(NGX_LOG_NOTICE, cycle->log, 0, "MOD_APPD - controller_host      : %V:%d", &amcf->controller_hostname, amcf->controller_port);
   ngx_log_error(NGX_LOG_NOTICE, cycle->log, 0, "MOD_APPD - controller_account   : %V", &amcf->controller_account);
@@ -193,7 +193,29 @@ appd_ngx_sdk_init(ngx_cycle_t *cycle, appd_ngx_main_conf_t *amcf) {
   }
   appd_config_set_app_name(cfg, (const char*)amcf->agent_app_name.data);
   appd_config_set_tier_name(cfg, (const char*)amcf->agent_tier_name.data);
-  appd_config_set_node_name(cfg, (const char*)amcf->agent_node_name.data);
+
+  // The AppDynamics SDK needs to be initialized per child process...
+  // https://docs.appdynamics.com/appd/22.x/22.12/en/application-monitoring/install-app-server-agents/c-c++-sdk/use-the-c-c++-sdk#id-.UsetheCCPPSDKv22.1-InitializetheSDK
+  // ...and each child process needs a distinct node name (otherwise the 
+  // data uploaded by the processes to the controller will clobber each 
+  // other).  As a workaround to Nginx not supporting variables at config time,
+  // if we determine we're using worker processes (master on) we'll append 
+  // hostname+worker to the end of each nodeName.
+  if (ngx_process == NGX_PROCESS_SINGLE) {
+    appd_config_set_node_name(cfg, (const char*)amcf->agent_node_name.data);
+  } 
+  else {
+    #ifdef DEBUG_WORKER_STARTUP
+    sleep(20);
+    #endif
+    nl = amcf->agent_node_name.len + cycle->hostname.len + 10;
+    nn = ngx_pcalloc(cycle->pool, nl + 1);
+    if (nn == NULL) {
+      return NGX_ERROR;
+    }
+    ngx_snprintf(nn, nl, "%V_%V_%d", &amcf->agent_node_name, &cycle->hostname, (ngx_worker + 1));
+    appd_config_set_node_name(cfg, (const char*)nn);
+  }
 
   if (appd_sdk_init(cfg) != APPD_NGX_OK) {
     return NGX_ERROR;
@@ -264,7 +286,8 @@ appd_ngx_rewrite_handler(ngx_http_request_t *r) {
   }
 
   if (appd_ngx_get_module_ctx(r) != NULL) {
-    // unknown reason why request would already have a context associated with it
+    // unknown reason why request would already have a context associated
+    // with it
     ngx_log_error(NGX_LOG_WARN, r->connection->log, 0, "MOD_APPD - unexpectedly found an existing module context bound to request in REWRITE phase");
     return NGX_DECLINED;
   }
@@ -389,9 +412,10 @@ appd_ngx_backend_begin(ngx_http_request_t *r, appd_ngx_loc_conf_t *alcf, appd_ng
   ngx_log_error(NGX_LOG_NOTICE, r->connection->log, 0, "MOD_APPD - beginning exitcall for backend %s", backend);
   tc->exit = appd_exitcall_begin(tc->bt, backend);
 
-  // this is a bit of a hack - opentelemetry handles correlation header injection by phonying a
-  // set_proxy_header in the location config and uses a variable.  For now, we'll just append it
-  // (or update the existing) to the inbound request headers and assume proxy_pass_request_headers 
+  // this is a bit of a hack - opentelemetry handles correlation header 
+  // injection by phonying a set_proxy_header in the location config and 
+  // uses a variable.  For now, we'll just append it (or update the existing)
+  // to the inbound request headers and assume proxy_pass_request_headers 
   // is 'on'
   th = appd_exitcall_get_correlation_header(tc->exit);
   ngx_log_error(NGX_LOG_NOTICE, r->connection->log, 0, "MOD_APPD - correlating exitcall with header %s", th);
@@ -422,9 +446,9 @@ appd_ngx_generate_transaction_name(ngx_http_request_t *r) {
     }
   }
 
-  // we don't want to create BTs for individual files
-  // here, a "file" is a URL where the last segment doesn't end w/ a forward-slash
-  // and appears to have a file extension
+  // we don't want to create BTs for individual files here. A file is a URL
+  // where the last segment doesn't end w/ a forward-slash and appears to have
+  // a file extension
   if (i == u.len && u.data[i-1] != '/') {
     for (; i > 0 && i > (u.len - 5); i--) {
       if (u.data[i-1] == '.') {
