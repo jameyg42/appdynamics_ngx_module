@@ -12,7 +12,6 @@ appd_ngx_create_main_config(ngx_conf_t *cf) {
   if (ngx_array_init(&amcf->backend_names, cf->pool, 4, sizeof(ngx_str_t)) != NGX_OK) {
     return NULL;
   }
-
   amcf->enabled = NGX_CONF_UNSET;
   amcf->controller_use_ssl = NGX_CONF_UNSET;
   amcf->controller_port = NGX_CONF_UNSET;
@@ -23,8 +22,34 @@ static char *
 appd_ngx_init_main_config(ngx_conf_t *cf, void *conf) {
   appd_ngx_main_conf_t *amcf = conf;
 
+  ngx_conf_init_value(amcf->enabled, 0);
   if (amcf->enabled) {
-    // TODO validate configuration
+    if (amcf->controller_hostname.len == 0) {
+      ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "missing appdynamics_controller_hostname");
+      return NGX_CONF_ERROR;
+    }
+    if (amcf->controller_account.len == 0) {
+      ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "missing appdynamics_controller_account");
+      return NGX_CONF_ERROR;
+    }
+    if(amcf->controller_access_key.len == 0) {
+      ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "missing appdynamics_controller_access_key");
+      return NGX_CONF_ERROR;
+    }
+    if (amcf->agent_app_name.len == 0) {
+      ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "missing appdynamics_agent_app_name");
+      return NGX_CONF_ERROR;
+    }
+    if (amcf->agent_tier_name.len == 0) {
+      ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "missing appdynamics_agent_tier_name");
+      return NGX_CONF_ERROR;
+    }
+    if (amcf->agent_node_name.len == 0) {
+      ngx_conf_log_error(NGX_LOG_EMERG, cf, 0, "missing appdynamics_agent_nod_name");
+      return NGX_CONF_ERROR;
+    }
+    // NOTE make sure to read AppDynamics' this-or-that defaulting of certain props!
+    
   }
 
   return NGX_CONF_OK;
@@ -69,7 +94,7 @@ appd_ngx_merge_loc_conf(ngx_conf_t *cf, void *parent, void *child) {
 
   ngx_conf_merge_str_value(conf->bt_name, prev->bt_name, "");
   ngx_conf_merge_uint_value(conf->bt_name_max_segments, prev->bt_name_max_segments, 3);
-  ngx_conf_merge_value(conf->error_on_4xx, prev->error_on_4xx, 1);
+  ngx_conf_merge_value(conf->error_on_4xx, prev->error_on_4xx, 0);
 
   pcc = prev->collectors.elts; 
   for (i = 0; i < prev->collectors.nelts; i++) {
@@ -187,10 +212,14 @@ appd_ngx_sdk_init(ngx_cycle_t *cycle, appd_ngx_main_conf_t *amcf) {
 
   struct appd_config* cfg = appd_config_init();
   appd_config_set_controller_host(cfg, (const char*)amcf->controller_hostname.data);
-  appd_config_set_controller_port(cfg, amcf->controller_port);
+  if (amcf->controller_port != NGX_CONF_UNSET) {
+    appd_config_set_controller_port(cfg, amcf->controller_port);
+  }
   appd_config_set_controller_account(cfg, (const char*)amcf->controller_account.data);
   appd_config_set_controller_access_key(cfg, (const char*)amcf->controller_access_key.data);
-  appd_config_set_controller_use_ssl(cfg, amcf->controller_use_ssl);
+  if (amcf->controller_use_ssl != NGX_CONF_UNSET) {
+    appd_config_set_controller_use_ssl(cfg, amcf->controller_use_ssl);
+  }
   if (amcf->controller_certificate_file.len > 0) {
     appd_config_set_controller_certificate_file(cfg, (const char*)amcf->controller_certificate_file.data);
   }
