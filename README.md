@@ -10,6 +10,7 @@ data into Snapshots.
 
 - [Status](#status)
 - [Installation](#installation)
+  - [AppDynamics Library](#appdynamics-library)
 - [Configuration directives](#configuration-directives)
   - [`appdynamics`](#appdynamics)
   - [`appdynamics_controller_hostname`](#appdynamics-controller-hostname)
@@ -31,7 +32,8 @@ data into Snapshots.
 - [Design Notes](#design-notes)
 
 ## Status
-BETA (active development) - developed/tested against Nginx 1.23.4 and AppDynamics C++ SDK 22.7
+BETA (active development) - developed/tested against Nginx 1.23.4 and AppDynamics C++ SDK 22.7.
+*NOTE* see [AppDynamics Library](#appdynamics-library) before attempting to build.
 
 ## Installation
 The `appdynamics_ngx_module` is not known to be affected by module
@@ -59,7 +61,11 @@ This will compile the module directly into Nginx.
 
 ### AppDynamics library
 The AppDynamics C++ Agent library is currently only distributed as a dynamic library, and needs to be "installed"
-and available to the appdynamics_ngx_module's library path.  
+and available to the appdynamics_ngx_module's library path at runtime. 
+
+Licensing prevents the inclusion of the AppDynamics SDK headers in this repo.  To compile this module, the headers from the SDK
+must be copied into `./vendor/appdynamics-cpp-sdk/include/`.
+
 See https://docs.appdynamics.com/appd/22.x/22.2/en/application-monitoring/install-app-server-agents/c-c++-sdk for more information.
 
 ## Configuration directives

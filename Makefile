@@ -28,7 +28,7 @@ build-nginx:
 	rm -f $(NGINX_SRC_DIR)/Makefile
 
 	cd $(NGINX_OUT_DIR); \
-	rm -f ./conf/nginx.conf && ln -s $(ROOT_DIR)/nginx.conf ./conf/nginx.conf
+	[ -f $(ROOT_DIR)/nginx.conf ] && rm -f ./conf/nginx.conf && ln -s $(ROOT_DIR)/nginx.conf ./conf/nginx.conf || true
 
 build: build-static
 build-static: configure-static build-nginx
