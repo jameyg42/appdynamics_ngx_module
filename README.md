@@ -81,37 +81,37 @@ Enables or disables AppDynamics monitoring for the Nginx runtime.
 
 ### `appdynamics_controller_hostname`
 
-- ***syntax**: `appdynamics_controller_hostname <name>`
-- ***context**: `http`
-- ***requred**: `yes`
+- **syntax**: `appdynamics_controller_hostname <name>`
+- **context**: `http`
+- **requred**: `yes`
 
 ### `appdynamics_controller_port`
 
-- ***syntax**: `appdynamics_controller_port <number>`
-- ***context**: `http`
+- **syntax**: `appdynamics_controller_port <number>`
+- **context**: `http`
 
 ### `appdynamics_controller_use_ssl`
 
-- ***syntax**: `appdynamics_controller_use_ssl on|off`
-- ***context**: `http`
+- **syntax**: `appdynamics_controller_use_ssl on|off`
+- **context**: `http`
 
 ### `appdynamics_controller_account`
 
-- ***syntax**: `appdynamics_controller_account <name>`
-- ***context**: `http`
-- ***requred**: `yes`
+- **syntax**: `appdynamics_controller_account <name>`
+- **context**: `http`
+- **requred**: `yes`
 
 ### `appdynamics_controller_accesskey`
 
-- ***syntax**: `appdynamics_controller_accesskey <key>`
-- ***context**: `http`
-- ***requred**: `yes`
+- **syntax**: `appdynamics_controller_accesskey <key>`
+- **context**: `http`
+- **requred**: `yes`
 
 ### `appdynamics_controller_certificate_file`
 
-- ***syntax**: `appdynamics_controller_hostname <name>`
-- ***context**: `http`
-- ***required**: probably...
+- **syntax**: `appdynamics_controller_hostname <name>`
+- **context**: `http`
+- **required**: probably...
 
 If the Controller uses SSL, you will likely need to point the module
 to a trustStore that can be used to validate the Controller's cert.
@@ -123,21 +123,21 @@ any default trusts.
 
 ### `appdynamics_agent_app_name`
 
-- ***syntax**: `appdynamics_agent_app_name <name>`
-- ***context**: `http`
-- ***requred**: `yes`
+- **syntax**: `appdynamics_agent_app_name <name>`
+- **context**: `http`
+- **requred**: `yes`
 
 ### `appdynamics_agent_tier_name`
 
-- ***syntax**: `appdynamics_agent_tier_name <name>`
-- ***context**: `http`
-- ***requred**: `yes`
+- **syntax**: `appdynamics_agent_tier_name <name>`
+- **context**: `http`
+- **requred**: `yes`
 
 ### `appdynamics_agent_node_name`
 
-- ***syntax**: `appdynamics_agent_node_name <name>`
-- ***context**: `http`
-- ***requred**: `yes`
+- **syntax**: `appdynamics_agent_node_name <name>`
+- **context**: `http`
+- **requred**: `yes`
 
 When Nginx is configured to use worker processes (`master on`), this
 configuration acts as a "prefix" - the node will be named with the
@@ -150,18 +150,18 @@ configuration mechanism may be supported.
 
 ### `appdynamics_bt_name`
 
-- ***syntax**: `appdynamics_bt_name <name>`
-- ***context**: `location`
-- ***default**: first `bt_max_segments` non-file path segments of URL
+- **syntax**: `appdynamics_bt_name <name>`
+- **context**: `location`
+- **default**: first `bt_max_segments` non-file path segments of URL
 
 The Business Transaction name for all requests matching the `location`.
 See "[Transaction Naming](#transaction-naming)" below for more information.
 
 ### `appdynamics_bt_name_max_segments`
 
-- ***syntax**: `appdynamics_bt_max_segments <number>`
-- ***context**: `location`
-- ***default**: 3
+- **syntax**: `appdynamics_bt_max_segments <number>`
+- **context**: `location`
+- **default**: 3
 
 When using 'automatic naming' (`bt_name` not set for the `location`), the
 maximum number of path segments used to name the transaction. 
@@ -169,8 +169,8 @@ See "[Transaction Naming](#transaction-naming)" below for more information.
 
 ### `appdynamics_backend`
 
-- ***syntax**: `appdynamics_backend <name>`
-- ***context**: `location`
+- **syntax**: `appdynamics_backend <name>`
+- **context**: `location`
 
 Treats the `location` as an Exit Call.  This is intended to be used
 in conjunction with some type of upstream for the `location` (e.g. 
@@ -179,8 +179,8 @@ variables/capture-groups are NOT supported).  See "[Design](#design-notes)" belo
 
 ### `appdynamics_add_collector`
 
-- ***syntax**: `appdynamics_add_collector <key> <value>`
-- ***context**: `http,server,location`
+- **syntax**: `appdynamics_add_collector <key> <value>`
+- **context**: `http,server,location`
 
 Collects the specified key+value pair as transaction/analytics
 data.  Values can contain `$variables`.  Collectors are added
@@ -188,9 +188,9 @@ together across configuration blocks.
 
 ### `appdynamics_error_on_4xx`
 
-- ***syntax**: `appdynamics_error_on_4xx on|off`
-- ***context**: `http,server,location`
-- ***default**: `off`
+- **syntax**: `appdynamics_error_on_4xx on|off`
+- **context**: `http,server,location`
+- **default**: `off`
 
 Whether to treat HTTP 4xx response codes as errors (mark the BT
 and/or upstream as "errored").
